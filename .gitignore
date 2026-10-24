@@ -1,0 +1,24 @@
+node_modules
+
+# Build output
+.svelte-kit/
+.output/
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env (keep the templates)
+.env
+.env.*
+!.env.example
+!.env.test
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.idea/
+*.swp
