@@ -4,6 +4,7 @@
   import { page } from '$app/state';
   import AppSidebar from '$lib/components/app-sidebar.svelte';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+  import { PUBLIC_PATHS } from '$lib/auth/public-routes.js';
   import type { LayoutProps } from './$types';
 
   let { children }: LayoutProps = $props();
@@ -13,7 +14,7 @@
   <link rel="icon" href={favicon} />
 </svelte:head>
 
-{#if page.url.pathname === '/login'}
+{#if PUBLIC_PATHS.includes(page.url.pathname)}
   {@render children()}
 {:else}
   <Sidebar.Provider>

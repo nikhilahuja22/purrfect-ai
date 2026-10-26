@@ -1,17 +1,18 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, refreshAll } from '$app/navigation';
+  import { page } from '$app/state';
   import { ChevronsUpDown, LogOut } from '@lucide/svelte';
   import * as Avatar from '$lib/components/ui/avatar/index.js';
   import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-  import { session, signOut } from '$lib/auth/session.svelte.js';
 
-  const email = $derived(session.current?.email ?? '');
+  const email = $derived<string>(page.data.user?.email ?? '');
   const initial = $derived(email.charAt(0).toUpperCase());
 
-  function logOut() {
-    signOut();
-    goto('/login');
+  async function logOut() {
+    await fetch('/logout', { method: 'POST' });
+    await refreshAll();
+    await goto('/login');
   }
 </script>
 

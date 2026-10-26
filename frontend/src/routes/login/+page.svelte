@@ -1,24 +1,26 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { enhance, type SubmitFunction } from '$app/forms';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
-  import { signIn } from '$lib/auth/session.svelte.js';
+  import type { LoginErrors } from '$lib/auth/login-validation.js';
+  import type { ActionData } from './$types';
 
-  let email = $state('');
-  let error = $state('');
+  let { form }: { form: ActionData } = $props();
 
-  function submit(event: SubmitEvent) {
-    event.preventDefault();
-    const value = email.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-      error = 'Enter a valid email address.';
-      return;
-    }
-    signIn(value);
-    goto('/');
-  }
+  let submitting = $state(false);
+  const errors: LoginErrors = $derived(form?.errors ?? {});
+  const formError = $derived(form?.formError ?? '');
+
+  // A successful sign-in returns a redirect to / from the server, which update() follows.
+  const handleEnhance: SubmitFunction = () => {
+    submitting = true;
+    return async ({ update }) => {
+      submitting = false;
+      await update();
+    };
+  };
 </script>
 
 <div class="flex min-h-svh items-center justify-center p-6">
@@ -28,25 +30,43 @@
       <Card.Description>Enter your email to continue.</Card.Description>
     </Card.Header>
     <Card.Content>
-      <form class="space-y-4" onsubmit={submit}>
+      <form class="space-y-4" method="POST" use:enhance={handleEnhance} novalidate>
         <div class="space-y-2">
           <Label for="login-email">Email</Label>
           <Input
             id="login-email"
+            name="email"
             type="email"
             autocomplete="email"
             placeholder="you@example.com"
-            bind:value={email}
-            required
           />
+          {#if errors.email}
+            <p class="text-sm text-destructive">{errors.email}</p>
+          {/if}
         </div>
 
-        {#if error}
-          <p class="text-sm text-destructive">{error}</p>
+        <div class="space-y-2">
+          <Label for="login-password">Password</Label>
+          <Input
+            id="login-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+          />
+          {#if errors.password}
+            <p class="text-sm text-destructive">{errors.password}</p>
+          {/if}
+        </div>
+
+        {#if formError}
+          <p class="text-sm text-destructive">{formError}</p>
         {/if}
 
-        <Button type="submit" class="w-full">Sign in</Button>
+        <Button type="submit" class="w-full" disabled={submitting}>Sign in</Button>
       </form>
+      <p class="mt-4 text-center text-sm text-muted-foreground">
+        No account? <a href="/sign-up" class="underline">Create one</a>
+      </p>
     </Card.Content>
   </Card.Root>
 </div>
