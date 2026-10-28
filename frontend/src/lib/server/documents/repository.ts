@@ -7,10 +7,13 @@ import {
   documents,
   type ExtractionStatus
 } from '$lib/server/db/schema.js';
+import { documentStorageKey } from '$lib/server/storage/s3.js';
 
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export type NewDocumentInput = {
+  // Chosen by the server when the upload URL was created. The file is already stored under this id.
+  id: string;
   fileName: string;
   contentType: string;
   sizeBytes: number;
@@ -148,7 +151,7 @@ export async function createDocument(
     .limit(1);
   if (!parser) return null;
 
-  const id = crypto.randomUUID();
+  const id = input.id;
   await db.transaction(async (tx) => {
     await tx.insert(documents).values({
       id,
@@ -157,7 +160,7 @@ export async function createDocument(
       fileName: input.fileName,
       contentType: input.contentType,
       sizeBytes: input.sizeBytes,
-      storageKey: `${companyId}/${id}`
+      storageKey: documentStorageKey(companyId, id)
     });
     await tx.insert(documentExtractions).values({ documentId: id, parserId: parser.id });
   });
@@ -165,11 +168,14 @@ export async function createDocument(
 }
 
 // Deleting a document also deletes its extraction runs (cascade).
-export async function deleteDocument(companyId: string, id: string): Promise<void> {
-  if (!UUID_PATTERN.test(id)) return;
-  await getDb()
+// Returns the storage key of the deleted file, or null if nothing was deleted.
+export async function deleteDocument(companyId: string, id: string): Promise<string | null> {
+  if (!UUID_PATTERN.test(id)) return null;
+  const [deleted] = await getDb()
     .delete(documents)
-    .where(and(eq(documents.companyId, companyId), eq(documents.id, id)));
+    .where(and(eq(documents.companyId, companyId), eq(documents.id, id)))
+    .returning({ storageKey: documents.storageKey });
+  return deleted?.storageKey ?? null;
 }
 
 // Marks one run as extracted with the given data. Returns false if the run is not in the company.

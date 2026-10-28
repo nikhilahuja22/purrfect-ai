@@ -3,7 +3,6 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
-  import { saveFile } from '$lib/documents/file-store.js';
   import type { DocumentParser } from '$lib/document-parsers/types.js';
 
   // selected: picked but not submitted. queued: waiting its turn. uploading: in progress.
@@ -53,21 +52,40 @@
     items = items.filter((item) => item.key !== key);
   }
 
-  // Creates the document record and its first extraction run on the server.
-  async function createDocumentRecord(file: File, selectedParserId: string): Promise<string> {
+  // Three steps. 1) Get an id and presigned URL. 2) PUT the file to S3. 3) Create the document row.
+  // If step 2 fails, no row is created.
+  async function createAndUpload(file: File, selectedParserId: string): Promise<void> {
+    const urlResponse = await fetch('/document-processing/upload-url', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ contentType: file.type })
+    });
+    if (!urlResponse.ok) throw new Error(`Could not start upload (${urlResponse.status})`);
+    const { id, uploadUrl, contentType } = (await urlResponse.json()) as {
+      id: string;
+      uploadUrl: string;
+      contentType: string;
+    };
+
+    const upload = await fetch(uploadUrl, {
+      method: 'PUT',
+      headers: { 'content-type': contentType },
+      body: file
+    });
+    if (!upload.ok) throw new Error(`S3 upload failed with status ${upload.status}`);
+
     const response = await fetch('/document-processing/upload', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
+        id,
         fileName: file.name,
         contentType: file.type,
         sizeBytes: file.size,
         parserId: selectedParserId
       })
     });
-    if (!response.ok) throw new Error(`Upload failed with status ${response.status}`);
-    const { id } = (await response.json()) as { id: string };
-    return id;
+    if (!response.ok) throw new Error(`Could not save document (${response.status})`);
   }
 
   async function create() {
@@ -84,8 +102,7 @@
     for (const item of items) {
       item.status = 'uploading';
       try {
-        const id = await createDocumentRecord(item.file, parserId);
-        await saveFile(id, item.file);
+        await createAndUpload(item.file, parserId);
         item.status = 'done';
       } catch {
         item.status = 'failed';

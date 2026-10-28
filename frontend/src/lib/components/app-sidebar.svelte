@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { Gauge, FileText } from '@lucide/svelte';
+  import { Gauge, FileText, Plug } from '@lucide/svelte';
   import * as Sidebar from '$lib/components/ui/sidebar/index.js';
   import UserMenu from '$lib/components/user-menu.svelte';
 
@@ -12,6 +12,10 @@
     {
       label: 'Documents',
       items: [{ title: 'Document Processing', href: '/document-processing', icon: FileText }]
+    },
+    {
+      label: 'Settings',
+      items: [{ title: 'Integrations', href: '/integrations', icon: Plug }]
     }
   ];
 </script>

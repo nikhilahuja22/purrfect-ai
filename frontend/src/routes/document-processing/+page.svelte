@@ -7,7 +7,6 @@
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
-  import { deleteFile } from '$lib/documents/file-store.js';
   import {
     EXTRACTION_STATUS_LABELS,
     extractionBadgeVariant
@@ -68,14 +67,7 @@
                     method="POST"
                     action="?/delete"
                     use:enhance={({ cancel }) => {
-                      if (!confirm(`Delete ${item.fileName}?`)) {
-                        cancel();
-                        return;
-                      }
-                      return async ({ result, update }) => {
-                        if (result.type === 'success') await deleteFile(item.id);
-                        await update();
-                      };
+                      if (!confirm(`Delete ${item.fileName}?`)) cancel();
                     }}
                   >
                     <input type="hidden" name="id" value={item.id} />

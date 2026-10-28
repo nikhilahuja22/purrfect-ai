@@ -1,6 +1,7 @@
 import {
   bigint,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -113,9 +114,35 @@ export const documentExtractions = pgTable(
   ]
 );
 
+export type IntegrationProvider = 'deepseek' | 'openai' | 'anthropic' | 'google';
+
+// A company's own (BYOK) AI provider key. The key is AES-256-GCM encrypted with the
+// ENCRYPTION_KEY master key. Only the last 4 characters are kept in clear text for display.
+export const companyIntegrations = pgTable(
+  'company_integrations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    provider: text('provider').$type<IntegrationProvider>().notNull(),
+    encryptedApiKey: text('encrypted_api_key').notNull(),
+    iv: text('iv').notNull(),
+    authTag: text('auth_tag').notNull(),
+    // Which master key encrypted this row. Lets the master key be rotated later.
+    keyVersion: integer('key_version').notNull().default(1),
+    keyLast4: text('key_last4').notNull(),
+    defaultModel: text('default_model'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex('company_integrations_company_provider_idx').on(table.companyId, table.provider)]
+);
+
 export type Company = typeof companies.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type DocumentParserRow = typeof documentParsers.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
 export type DocumentExtractionRow = typeof documentExtractions.$inferSelect;
+export type CompanyIntegrationRow = typeof companyIntegrations.$inferSelect;

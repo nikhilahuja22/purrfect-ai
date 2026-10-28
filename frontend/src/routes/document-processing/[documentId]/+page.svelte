@@ -1,12 +1,10 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { onMount } from 'svelte';
   import { ArrowLeft, Download } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import ExtractedData from '$lib/components/document-parsers/extracted-data.svelte';
-  import { loadFile } from '$lib/documents/file-store.js';
   import {
     EXTRACTION_STATUS_LABELS,
     extractionBadgeVariant
@@ -15,28 +13,10 @@
   let { data, form } = $props();
   let detail = $derived(data.document);
 
-  let fileUrl = $state<string | null>(null);
+  // Presigned S3 link, created by the page load.
+  let fileUrl = $derived(data.fileUrl);
   let isPdf = $derived(detail?.contentType === 'application/pdf');
   let isImage = $derived(detail?.contentType.startsWith('image/') ?? false);
-
-  // The file bytes live in the browser, keyed by document id.
-  onMount(() => {
-    const id = detail?.id;
-    let url: string | null = null;
-    let cancelled = false;
-    if (id) {
-      loadFile(id).then((blob) => {
-        if (!blob || cancelled) return;
-        url = URL.createObjectURL(blob);
-        fileUrl = url;
-      });
-    }
-
-    return () => {
-      cancelled = true;
-      if (url) URL.revokeObjectURL(url);
-    };
-  });
 </script>
 
 <div class="space-y-6">
