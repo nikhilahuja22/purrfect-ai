@@ -1,4 +1,5 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import type { FieldDef } from '../../document-parsers/types';
 
 export const companies = pgTable('companies', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -35,6 +36,27 @@ export const sessions = pgTable(
   (table) => [index('sessions_user_id_idx').on(table.userId)]
 );
 
+// A document type a company defines. `config` holds the nested field tree (FieldDef[]).
+export const documentParsers = pgTable(
+  'document_parsers',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    submitterId: uuid('submitter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    name: text('name').notNull(),
+    description: text('description').notNull().default(''),
+    config: jsonb('config').$type<FieldDef[]>().notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [uniqueIndex('document_parsers_company_name_idx').on(table.companyId, table.name)]
+);
+
 export type Company = typeof companies.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
+export type DocumentParserRow = typeof documentParsers.$inferSelect;

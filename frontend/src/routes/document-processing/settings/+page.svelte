@@ -1,27 +1,15 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { enhance } from '$app/forms';
   import { Pencil, Plus, Trash } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
-  import { deleteParser, loadParsers } from '$lib/document-parsers/store.js';
-  import {
-    countFields,
-    type DocumentParser
-  } from '$lib/document-parsers/types.js';
+  import { countFields } from '$lib/document-parsers/types.js';
 
-  let parsers = $state<DocumentParser[]>([]);
-  let loaded = $state(false);
+  let { data } = $props();
 
-  onMount(() => {
-    parsers = loadParsers();
-    loaded = true;
-  });
-
-  function remove(id: string) {
-    if (!confirm('Delete this parser?')) return;
-    deleteParser(id);
-    parsers = loadParsers();
+  function confirmDelete({ cancel }: { cancel: () => void }) {
+    if (!confirm('Delete this parser?')) cancel();
   }
 </script>
 
@@ -33,7 +21,7 @@
     </Button>
   </div>
 
-  {#if loaded && parsers.length === 0}
+  {#if data.parsers.length === 0}
     <Card.Root>
       <Card.Content class="py-10 text-center text-sm text-muted-foreground">
         No parsers yet. Create one to get started.
@@ -42,7 +30,7 @@
   {/if}
 
   <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-    {#each parsers as parser (parser.id)}
+    {#each data.parsers as parser (parser.id)}
       <Card.Root>
         <Card.Header>
           <Card.Title>{parser.name}</Card.Title>
@@ -59,14 +47,12 @@
             <Pencil />
             Edit
           </Button>
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Delete parser"
-            onclick={() => remove(parser.id)}
-          >
-            <Trash />
-          </Button>
+          <form method="POST" action="?/delete" use:enhance={confirmDelete}>
+            <input type="hidden" name="id" value={parser.id} />
+            <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete parser">
+              <Trash />
+            </Button>
+          </form>
         </Card.Footer>
       </Card.Root>
     {/each}

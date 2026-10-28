@@ -4,6 +4,8 @@
   import ParserBuilder from '$lib/components/document-parsers/parser-builder.svelte';
   import { createParser } from '$lib/document-parsers/types.js';
 
+  let { form } = $props();
+
   const parser = createParser();
 </script>
 
@@ -15,5 +17,5 @@
     <h1 class="text-2xl font-semibold">New parser</h1>
   </div>
 
-  <ParserBuilder {parser} />
+  <ParserBuilder {parser} serverErrors={form?.errors ?? []} />
 </div>

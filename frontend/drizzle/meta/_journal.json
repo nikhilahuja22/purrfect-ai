@@ -15,6 +15,13 @@
       "when": 1793050148536,
       "tag": "0001_motionless_luke_cage",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793052239522,
+      "tag": "0002_crazy_captain_stacy",
+      "breakpoints": true
     }
   ]
 }

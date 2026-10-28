@@ -65,7 +65,7 @@ export function countFields(fields: FieldDef[]): number {
   return fields.reduce((total, field) => total + 1 + countFields(field.children), 0);
 }
 
-export function validateParser(parser: DocumentParser): string[] {
+export function validateParser(parser: Pick<DocumentParser, 'name' | 'fields'>): string[] {
   const errors: string[] = [];
   if (!parser.name.trim()) errors.push('Document type name is required.');
   if (parser.fields.length === 0) errors.push('Add at least one field.');

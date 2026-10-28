@@ -1,13 +1,12 @@
 <script lang="ts">
   import { untrack } from 'svelte';
-  import { goto } from '$app/navigation';
+  import { enhance } from '$app/forms';
   import * as Card from '$lib/components/ui/card/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import { Input } from '$lib/components/ui/input/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { Textarea } from '$lib/components/ui/textarea/index.js';
   import { Plus, Save } from '@lucide/svelte';
-  import { saveParser } from '$lib/document-parsers/store.js';
   import {
     createField,
     toExtractionSchema,
@@ -16,22 +15,21 @@
   } from '$lib/document-parsers/types.js';
   import FieldEditor from './field-editor.svelte';
 
-  let { parser }: { parser: DocumentParser } = $props();
+  // serverErrors come back from a failed save (e.g. duplicate name).
+  let { parser, serverErrors = [] }: { parser: DocumentParser; serverErrors?: string[] } =
+    $props();
 
-  // Copy once: the builder edits a draft and only writes it on save.
+  // Copy once: the builder edits a draft and only submits it on save.
   // $state.snapshot gives a plain object, since structuredClone fails on reactive proxies.
   let draft = $state<DocumentParser>(untrack(() => $state.snapshot(parser)));
   let errors = $derived(validateParser(draft));
+  let allErrors = $derived([...errors, ...serverErrors]);
+  let fieldsJson = $derived(JSON.stringify(draft.fields));
   let schemaPreview = $derived(JSON.stringify(toExtractionSchema(draft), null, 2));
-
-  function save() {
-    if (errors.length > 0) return;
-    saveParser($state.snapshot(draft));
-    goto('/document-processing/settings');
-  }
 </script>
 
-<div class="grid gap-6 lg:grid-cols-[1fr_360px]">
+<form method="POST" class="grid gap-6 lg:grid-cols-[1fr_360px]" use:enhance>
+  <input type="hidden" name="config" value={fieldsJson} />
   <div class="space-y-6">
     <Card.Root>
       <Card.Header>
@@ -41,12 +39,13 @@
       <Card.Content class="space-y-4">
         <div class="space-y-2">
           <Label for="parser-name">Name</Label>
-          <Input id="parser-name" placeholder="e.g. Bank statement" bind:value={draft.name} />
+          <Input id="parser-name" name="name" placeholder="e.g. Bank statement" bind:value={draft.name} />
         </div>
         <div class="space-y-2">
           <Label for="parser-description">Description</Label>
           <Textarea
             id="parser-description"
+            name="description"
             placeholder="Helps the AI recognise this document"
             bind:value={draft.description}
           />
@@ -84,9 +83,9 @@
         <Card.Title>Checks</Card.Title>
       </Card.Header>
       <Card.Content>
-        {#if errors.length > 0}
+        {#if allErrors.length > 0}
           <ul class="list-disc space-y-1 pl-5 text-sm text-destructive">
-            {#each errors as error (error)}
+            {#each allErrors as error (error)}
               <li>{error}</li>
             {/each}
           </ul>
@@ -95,7 +94,7 @@
         {/if}
       </Card.Content>
       <Card.Footer>
-        <Button class="w-full" disabled={errors.length > 0} onclick={save}>
+        <Button class="w-full" type="submit" disabled={errors.length > 0}>
           <Save />
           Save parser
         </Button>
@@ -112,4 +111,4 @@
       </Card.Content>
     </Card.Root>
   </div>
-</div>
+</form>
