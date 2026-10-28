@@ -4,8 +4,6 @@
   import * as Dialog from '$lib/components/ui/dialog/index.js';
   import { Label } from '$lib/components/ui/label/index.js';
   import { saveFile } from '$lib/documents/file-store.js';
-  import { saveDocument } from '$lib/documents/store.js';
-  import { loadParsers } from '$lib/document-parsers/store.js';
   import type { DocumentParser } from '$lib/document-parsers/types.js';
 
   // selected: picked but not submitted. queued: waiting its turn. uploading: in progress.
@@ -13,11 +11,10 @@
   type UploadItem = { key: string; file: File; status: ItemStatus; error: string };
   type Phase = 'select' | 'running' | 'finished';
 
-  let { onComplete }: { onComplete?: () => void } = $props();
+  let { parsers, onComplete }: { parsers: DocumentParser[]; onComplete?: () => void } = $props();
 
   let open = $state(false);
   let phase = $state<Phase>('select');
-  let parsers = $state<DocumentParser[]>([]);
   let parserId = $state('');
   let items = $state<UploadItem[]>([]);
   let error = $state('');
@@ -28,7 +25,6 @@
     // Keep the dialog open while files are uploading.
     if (!next && phase === 'running') return;
     if (next) {
-      parsers = loadParsers();
       parserId = parsers[0]?.id ?? '';
       items = [];
       phase = 'select';
@@ -57,9 +53,25 @@
     items = items.filter((item) => item.key !== key);
   }
 
+  // Creates the document record and its first extraction run on the server.
+  async function createDocumentRecord(file: File, selectedParserId: string): Promise<string> {
+    const response = await fetch('/document-processing/upload', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fileName: file.name,
+        contentType: file.type,
+        sizeBytes: file.size,
+        parserId: selectedParserId
+      })
+    });
+    if (!response.ok) throw new Error(`Upload failed with status ${response.status}`);
+    const { id } = (await response.json()) as { id: string };
+    return id;
+  }
+
   async function create() {
-    const parser = parsers.find((item) => item.id === parserId);
-    if (!parser || items.length === 0) {
+    if (!parserId || items.length === 0) {
       error = 'Choose a document type and at least one file.';
       return;
     }
@@ -72,23 +84,12 @@
     for (const item of items) {
       item.status = 'uploading';
       try {
-        const id = crypto.randomUUID();
+        const id = await createDocumentRecord(item.file, parserId);
         await saveFile(id, item.file);
-        saveDocument({
-          id,
-          fileName: item.file.name,
-          mimeType: item.file.type,
-          size: item.file.size,
-          parserId: parser.id,
-          parserName: parser.name,
-          status: 'awaiting_extraction',
-          createdAt: new Date().toISOString(),
-          data: null
-        });
         item.status = 'done';
       } catch {
         item.status = 'failed';
-        item.error = 'Could not save. The file may be too large.';
+        item.error = 'Could not upload this file.';
       }
     }
 

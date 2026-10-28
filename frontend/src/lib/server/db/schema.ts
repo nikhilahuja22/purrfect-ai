@@ -1,4 +1,13 @@
-import { index, jsonb, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import {
+  bigint,
+  index,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid
+} from 'drizzle-orm/pg-core';
 import type { FieldDef } from '../../document-parsers/types';
 
 export const companies = pgTable('companies', {
@@ -56,7 +65,57 @@ export const documentParsers = pgTable(
   (table) => [uniqueIndex('document_parsers_company_name_idx').on(table.companyId, table.name)]
 );
 
+// An uploaded file stored in S3. Holds only file facts, so any module can reference it.
+export const documents = pgTable(
+  'documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    companyId: uuid('company_id')
+      .notNull()
+      .references(() => companies.id, { onDelete: 'cascade' }),
+    submitterId: uuid('submitter_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    fileName: text('file_name').notNull(),
+    contentType: text('content_type').notNull(),
+    sizeBytes: bigint('size_bytes', { mode: 'number' }).notNull(),
+    storageKey: text('storage_key').notNull().unique(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [index('documents_company_id_idx').on(table.companyId)]
+);
+
+export type ExtractionStatus = 'processing' | 'extracted' | 'failed';
+
+// One extraction run of a document against a parser. Owns status and results,
+// so the documents table stays a plain record of the file.
+export const documentExtractions = pgTable(
+  'document_extractions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    parserId: uuid('parser_id')
+      .notNull()
+      .references(() => documentParsers.id, { onDelete: 'restrict' }),
+    status: text('status').$type<ExtractionStatus>().notNull().default('processing'),
+    // Extracted values, shaped by the parser's fields. Null until extraction finishes.
+    data: jsonb('data').$type<Record<string, unknown>>(),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow()
+  },
+  (table) => [
+    index('document_extractions_document_id_idx').on(table.documentId),
+    index('document_extractions_parser_id_idx').on(table.parserId)
+  ]
+);
+
 export type Company = typeof companies.$inferSelect;
 export type User = typeof users.$inferSelect;
 export type Session = typeof sessions.$inferSelect;
 export type DocumentParserRow = typeof documentParsers.$inferSelect;
+export type DocumentRow = typeof documents.$inferSelect;
+export type DocumentExtractionRow = typeof documentExtractions.$inferSelect;

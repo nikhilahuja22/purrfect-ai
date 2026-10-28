@@ -6,7 +6,7 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import { countFields } from '$lib/document-parsers/types.js';
 
-  let { data } = $props();
+  let { data, form } = $props();
 
   function confirmDelete({ cancel }: { cancel: () => void }) {
     if (!confirm('Delete this parser?')) cancel();
@@ -20,6 +20,10 @@
       New parser
     </Button>
   </div>
+
+  {#if form?.message}
+    <p class="text-sm text-destructive">{form.message}</p>
+  {/if}
 
   {#if data.parsers.length === 0}
     <Card.Root>

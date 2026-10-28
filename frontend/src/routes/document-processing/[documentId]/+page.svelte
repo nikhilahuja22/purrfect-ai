@@ -1,31 +1,31 @@
 <script lang="ts">
+  import { enhance } from '$app/forms';
   import { onMount } from 'svelte';
-  import { page } from '$app/state';
   import { ArrowLeft, Download } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
   import ExtractedData from '$lib/components/document-parsers/extracted-data.svelte';
-  import { getParser } from '$lib/document-parsers/store.js';
-  import type { DocumentParser } from '$lib/document-parsers/types.js';
   import { loadFile } from '$lib/documents/file-store.js';
-  import { SAMPLE_INVOICE_DATA } from '$lib/documents/sample-extraction.js';
-  import { getDocument, saveDocument, type ProcessedDocument } from '$lib/documents/store.js';
+  import {
+    EXTRACTION_STATUS_LABELS,
+    extractionBadgeVariant
+  } from '$lib/documents/extraction-status.js';
 
-  // undefined = loading, null = not found
-  let document = $state<ProcessedDocument | null | undefined>(undefined);
+  let { data, form } = $props();
+  let detail = $derived(data.document);
+
   let fileUrl = $state<string | null>(null);
-  let parser = $state<DocumentParser | null>(null);
+  let isPdf = $derived(detail?.contentType === 'application/pdf');
+  let isImage = $derived(detail?.contentType.startsWith('image/') ?? false);
 
+  // The file bytes live in the browser, keyed by document id.
   onMount(() => {
-    const found = getDocument(page.params.documentId ?? '') ?? null;
-    document = found;
-    parser = found ? (getParser(found.parserId) ?? null) : null;
-
+    const id = detail?.id;
     let url: string | null = null;
     let cancelled = false;
-    if (found) {
-      loadFile(found.id).then((blob) => {
+    if (id) {
+      loadFile(id).then((blob) => {
         if (!blob || cancelled) return;
         url = URL.createObjectURL(blob);
         fileUrl = url;
@@ -37,16 +37,6 @@
       if (url) URL.revokeObjectURL(url);
     };
   });
-
-  let isPdf = $derived(document?.mimeType === 'application/pdf');
-  let isImage = $derived(document?.mimeType.startsWith('image/') ?? false);
-
-  function loadSampleData() {
-    if (!document) return;
-    const updated: ProcessedDocument = { ...document, status: 'parsed', data: SAMPLE_INVOICE_DATA };
-    saveDocument(updated);
-    document = updated;
-  }
 </script>
 
 <div class="space-y-6">
@@ -54,38 +44,34 @@
     <Button variant="ghost" size="icon" aria-label="Back" href="/document-processing">
       <ArrowLeft />
     </Button>
-    {#if document}
-      <h2 class="truncate text-xl font-semibold">{document.fileName}</h2>
-      <Badge variant={document.status === 'parsed' ? 'default' : 'secondary'}>
-        {document.status === 'parsed' ? 'Parsed' : 'Awaiting extraction'}
-      </Badge>
+    {#if detail}
+      <h2 class="truncate text-xl font-semibold">{detail.fileName}</h2>
     {/if}
   </div>
 
-  {#if document === undefined}
-    <p class="text-sm text-muted-foreground">Loading...</p>
-  {:else if document === null}
+  {#if !detail}
     <p class="text-sm text-destructive">Document not found.</p>
   {:else}
     <div class="grid gap-6 lg:grid-cols-2">
       <Card.Root>
         <Card.Header>
           <Card.Title>Document</Card.Title>
+          <Card.Description>{(detail.sizeBytes / 1024).toFixed(1)} KB</Card.Description>
         </Card.Header>
         <Card.Content>
           {#if !fileUrl}
             <p class="text-sm text-muted-foreground">Loading file...</p>
           {:else if isPdf}
-            <iframe title={document.fileName} src={fileUrl} class="h-[70vh] w-full rounded-md border"></iframe>
+            <iframe title={detail.fileName} src={fileUrl} class="h-[70vh] w-full rounded-md border"></iframe>
           {:else if isImage}
-            <img src={fileUrl} alt={document.fileName} class="max-h-[70vh] w-full rounded-md object-contain" />
+            <img src={fileUrl} alt={detail.fileName} class="max-h-[70vh] w-full rounded-md object-contain" />
           {:else}
             <p class="text-sm text-muted-foreground">Preview is not available for this file type.</p>
           {/if}
         </Card.Content>
         <Card.Footer>
           {#if fileUrl}
-            <Button variant="outline" size="sm" href={fileUrl} download={document.fileName}>
+            <Button variant="outline" size="sm" href={fileUrl} download={detail.fileName}>
               <Download />
               Download
             </Button>
@@ -93,28 +79,55 @@
         </Card.Footer>
       </Card.Root>
 
-      <Card.Root>
-        <Card.Header>
-          <Card.Title>Parsed data</Card.Title>
-          <Card.Description>
-            {document.parserName} · {(document.size / 1024).toFixed(1)} KB
-          </Card.Description>
-        </Card.Header>
-        <Card.Content>
-          {#if document.data}
-            <div class="max-h-[70vh] overflow-auto">
-              <ExtractedData data={document.data} fields={parser?.fields ?? []} />
-            </div>
-          {:else}
-            <div class="space-y-3">
-              <p class="text-sm text-muted-foreground">
-                Not extracted yet. Extraction runs with the AI backend, which is not connected yet.
-              </p>
-              <Button variant="outline" size="sm" onclick={loadSampleData}>Load sample data</Button>
-            </div>
-          {/if}
-        </Card.Content>
-      </Card.Root>
+      <div class="space-y-6">
+        {#if form?.message}
+          <p class="text-sm text-destructive">{form.message}</p>
+        {/if}
+
+        {#if detail.extractions.length === 0}
+          <Card.Root>
+            <Card.Content class="py-10 text-center text-sm text-muted-foreground">
+              No extractions yet.
+            </Card.Content>
+          </Card.Root>
+        {/if}
+
+        {#each detail.extractions as run, index (run.id)}
+          <Card.Root>
+            <Card.Header>
+              <Card.Title>{run.parserName}</Card.Title>
+              <Card.Description>{new Date(run.createdAt).toLocaleString()}</Card.Description>
+              <Card.Action class="flex gap-2">
+                {#if index === 0}
+                  <Badge variant="outline">Latest</Badge>
+                {/if}
+                <Badge variant={extractionBadgeVariant(run.status)}>
+                  {EXTRACTION_STATUS_LABELS[run.status]}
+                </Badge>
+              </Card.Action>
+            </Card.Header>
+            <Card.Content>
+              {#if run.status === 'failed'}
+                <p class="text-sm text-destructive">{run.error ?? 'Extraction failed.'}</p>
+              {:else if run.data}
+                <div class="max-h-[60vh] overflow-auto">
+                  <ExtractedData data={run.data} fields={run.fields} />
+                </div>
+              {:else}
+                <div class="space-y-3">
+                  <p class="text-sm text-muted-foreground">
+                    Not extracted yet. Extraction runs with the AI backend, which is not connected yet.
+                  </p>
+                  <form method="POST" action="?/loadSample" use:enhance>
+                    <input type="hidden" name="extractionId" value={run.id} />
+                    <Button type="submit" variant="outline" size="sm">Load sample data</Button>
+                  </form>
+                </div>
+              {/if}
+            </Card.Content>
+          </Card.Root>
+        {/each}
+      </div>
     </div>
   {/if}
 </div>

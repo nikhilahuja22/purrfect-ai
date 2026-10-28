@@ -5,6 +5,7 @@ import { getDb } from '$lib/server/db/index.js';
 import { documentParsers, type DocumentParserRow } from '$lib/server/db/schema.js';
 
 const UNIQUE_VIOLATION = '23505';
+const FOREIGN_KEY_VIOLATION = '23503';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export class DuplicateParserNameError extends Error {
@@ -14,10 +15,20 @@ export class DuplicateParserNameError extends Error {
   }
 }
 
-function isUniqueViolation(err: unknown): boolean {
+export class ParserInUseError extends Error {
+  constructor() {
+    super('This document type has documents extracted with it. Delete those documents first.');
+    this.name = 'ParserInUseError';
+  }
+}
+
+function errorCode(err: unknown): string | undefined {
   const direct = (err as { code?: string } | null)?.code;
-  const wrapped = (err as { cause?: { code?: string } } | null)?.cause?.code;
-  return direct === UNIQUE_VIOLATION || wrapped === UNIQUE_VIOLATION;
+  return direct ?? (err as { cause?: { code?: string } } | null)?.cause?.code;
+}
+
+function isUniqueViolation(err: unknown): boolean {
+  return errorCode(err) === UNIQUE_VIOLATION;
 }
 
 function toParser(row: DocumentParserRow): DocumentParser {
@@ -99,7 +110,13 @@ export async function updateDocumentParser(
 
 export async function deleteDocumentParser(companyId: string, id: string): Promise<void> {
   if (!UUID_PATTERN.test(id)) return;
-  await getDb()
-    .delete(documentParsers)
-    .where(and(eq(documentParsers.companyId, companyId), eq(documentParsers.id, id)));
+  try {
+    await getDb()
+      .delete(documentParsers)
+      .where(and(eq(documentParsers.companyId, companyId), eq(documentParsers.id, id)));
+  } catch (err) {
+    // document_extractions references parsers with ON DELETE RESTRICT.
+    if (errorCode(err) === FOREIGN_KEY_VIOLATION) throw new ParserInUseError();
+    throw err;
+  }
 }

@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from 'svelte';
+  import { enhance } from '$app/forms';
+  import { refreshAll } from '$app/navigation';
   import { Trash } from '@lucide/svelte';
   import UploadDocumentsDialog from '$lib/components/document-processing/upload-documents-dialog.svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
@@ -7,45 +8,27 @@
   import * as Card from '$lib/components/ui/card/index.js';
   import * as Table from '$lib/components/ui/table/index.js';
   import { deleteFile } from '$lib/documents/file-store.js';
-  import { deleteDocument, loadDocuments, type ProcessedDocument } from '$lib/documents/store.js';
+  import {
+    EXTRACTION_STATUS_LABELS,
+    extractionBadgeVariant
+  } from '$lib/documents/extraction-status.js';
 
-  let documents = $state<ProcessedDocument[]>([]);
-  let loaded = $state(false);
-
-  function refresh() {
-    documents = loadDocuments();
-  }
-
-  onMount(() => {
-    refresh();
-    loaded = true;
-  });
-
-  async function remove(document: ProcessedDocument) {
-    if (!confirm(`Delete ${document.fileName}?`)) return;
-    await deleteFile(document.id);
-    deleteDocument(document.id);
-    documents = loadDocuments();
-  }
-
-  function statusLabel(status: ProcessedDocument['status']): string {
-    return status === 'parsed' ? 'Parsed' : 'Awaiting extraction';
-  }
+  let { data } = $props();
 </script>
 
 <div class="space-y-6">
   <div class="flex flex-wrap items-center justify-between gap-4">
     <p class="text-sm text-muted-foreground">Uploaded documents and their extracted data.</p>
-    <UploadDocumentsDialog onComplete={refresh} />
+    <UploadDocumentsDialog parsers={data.parsers} onComplete={() => refreshAll()} />
   </div>
 
-  {#if loaded && documents.length === 0}
+  {#if data.documents.length === 0}
     <Card.Root>
       <Card.Content class="py-10 text-center text-sm text-muted-foreground">
         No documents yet. Upload one to get started.
       </Card.Content>
     </Card.Root>
-  {:else if documents.length > 0}
+  {:else}
     <Card.Root>
       <Table.Root>
         <Table.Header>
@@ -58,33 +41,48 @@
           </Table.Row>
         </Table.Header>
         <Table.Body>
-          {#each documents as document (document.id)}
+          {#each data.documents as item (item.id)}
             <Table.Row>
-              <Table.Cell class="max-w-xs truncate font-medium" title={document.fileName}>
-                {document.fileName}
+              <Table.Cell class="max-w-xs truncate font-medium" title={item.fileName}>
+                {item.fileName}
               </Table.Cell>
-              <Table.Cell>{document.parserName}</Table.Cell>
+              <Table.Cell>{item.latestExtraction?.parserName ?? '—'}</Table.Cell>
               <Table.Cell>
-                <Badge variant={document.status === 'parsed' ? 'default' : 'secondary'}>
-                  {statusLabel(document.status)}
-                </Badge>
+                {#if item.latestExtraction}
+                  <Badge variant={extractionBadgeVariant(item.latestExtraction.status)}>
+                    {EXTRACTION_STATUS_LABELS[item.latestExtraction.status]}
+                  </Badge>
+                {:else}
+                  <span class="text-sm text-muted-foreground">No extraction</span>
+                {/if}
               </Table.Cell>
               <Table.Cell class="text-muted-foreground">
-                {new Date(document.createdAt).toLocaleDateString()}
+                {new Date(item.createdAt).toLocaleDateString()}
               </Table.Cell>
               <Table.Cell>
                 <div class="flex justify-end gap-2">
-                  <Button variant="outline" size="sm" href={`/document-processing/${document.id}`}>
+                  <Button variant="outline" size="sm" href={`/document-processing/${item.id}`}>
                     View
                   </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Delete document"
-                    onclick={() => remove(document)}
+                  <form
+                    method="POST"
+                    action="?/delete"
+                    use:enhance={({ cancel }) => {
+                      if (!confirm(`Delete ${item.fileName}?`)) {
+                        cancel();
+                        return;
+                      }
+                      return async ({ result, update }) => {
+                        if (result.type === 'success') await deleteFile(item.id);
+                        await update();
+                      };
+                    }}
                   >
-                    <Trash />
-                  </Button>
+                    <input type="hidden" name="id" value={item.id} />
+                    <Button type="submit" variant="ghost" size="icon-sm" aria-label="Delete document">
+                      <Trash />
+                    </Button>
+                  </form>
                 </div>
               </Table.Cell>
             </Table.Row>
