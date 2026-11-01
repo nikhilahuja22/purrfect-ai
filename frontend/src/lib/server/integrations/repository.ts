@@ -1,6 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import type { SupportedProvider } from '$lib/integrations/providers.js';
-import { encryptSecret } from '$lib/server/crypto/secret-box.js';
+import { decryptSecret, encryptSecret } from '$lib/server/crypto/secret-box.js';
 import { getDb } from '$lib/server/db/index.js';
 import { companyIntegrations } from '$lib/server/db/schema.js';
 
@@ -74,4 +74,29 @@ export async function deleteIntegration(
     .where(
       and(eq(companyIntegrations.companyId, companyId), eq(companyIntegrations.provider, provider))
     );
+}
+
+// Server-only. Returns the decrypted key for background jobs. Never send this to the browser.
+export async function getIntegrationSecret(
+  companyId: string,
+  provider: SupportedProvider
+): Promise<{ apiKey: string; defaultModel: string | null } | null> {
+  const [row] = await getDb()
+    .select({
+      encryptedApiKey: companyIntegrations.encryptedApiKey,
+      iv: companyIntegrations.iv,
+      authTag: companyIntegrations.authTag,
+      defaultModel: companyIntegrations.defaultModel
+    })
+    .from(companyIntegrations)
+    .where(
+      and(eq(companyIntegrations.companyId, companyId), eq(companyIntegrations.provider, provider))
+    )
+    .limit(1);
+  if (!row) return null;
+
+  return {
+    apiKey: decryptSecret({ ciphertext: row.encryptedApiKey, iv: row.iv, authTag: row.authTag }),
+    defaultModel: row.defaultModel
+  };
 }

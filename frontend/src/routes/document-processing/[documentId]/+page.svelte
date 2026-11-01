@@ -1,6 +1,7 @@
 <script lang="ts">
   import { enhance } from '$app/forms';
-  import { ArrowLeft, Download } from '@lucide/svelte';
+  import { refreshAll } from '$app/navigation';
+  import { ArrowLeft, Download, RefreshCw } from '@lucide/svelte';
   import { Badge } from '$lib/components/ui/badge/index.js';
   import { Button } from '$lib/components/ui/button/index.js';
   import * as Card from '$lib/components/ui/card/index.js';
@@ -12,6 +13,16 @@
 
   let { data, form } = $props();
   let detail = $derived(data.document);
+  let refreshing = $state(false);
+
+  async function refresh() {
+    refreshing = true;
+    try {
+      await refreshAll();
+    } finally {
+      refreshing = false;
+    }
+  }
 
   // Presigned S3 link, created by the page load.
   let fileUrl = $derived(data.fileUrl);
@@ -25,7 +36,11 @@
       <ArrowLeft />
     </Button>
     {#if detail}
-      <h2 class="truncate text-xl font-semibold">{detail.fileName}</h2>
+      <h2 class="min-w-0 flex-1 truncate text-xl font-semibold">{detail.fileName}</h2>
+      <Button variant="outline" size="sm" onclick={refresh} disabled={refreshing}>
+        <RefreshCw class={refreshing ? 'animate-spin' : ''} />
+        Refresh
+      </Button>
     {/if}
   </div>
 
@@ -94,17 +109,17 @@
                   <ExtractedData data={run.data} fields={run.fields} />
                 </div>
               {:else}
-                <div class="space-y-3">
-                  <p class="text-sm text-muted-foreground">
-                    Not extracted yet. Extraction runs with the AI backend, which is not connected yet.
-                  </p>
-                  <form method="POST" action="?/loadSample" use:enhance>
-                    <input type="hidden" name="extractionId" value={run.id} />
-                    <Button type="submit" variant="outline" size="sm">Load sample data</Button>
-                  </form>
-                </div>
+                <p class="text-sm text-muted-foreground">
+                  Extracting. Click Refresh to check for results.
+                </p>
               {/if}
             </Card.Content>
+            <Card.Footer>
+              <form method="POST" action="?/reprocess" use:enhance>
+                <input type="hidden" name="extractionId" value={run.id} />
+                <Button type="submit" variant="outline" size="sm">Reprocess</Button>
+              </form>
+            </Card.Footer>
           </Card.Root>
         {/each}
       </div>

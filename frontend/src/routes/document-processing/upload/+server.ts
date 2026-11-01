@@ -1,5 +1,6 @@
 import { requireUser } from '$lib/server/auth/require-user.js';
 import { createDocument, UUID_PATTERN, type NewDocumentInput } from '$lib/server/documents/repository.js';
+import { runExtraction } from '$lib/server/extraction/run.js';
 import { documentStorageKey, getObjectSize } from '$lib/server/storage/s3.js';
 import type { RequestHandler } from './$types';
 
@@ -28,7 +29,9 @@ export const POST: RequestHandler = async ({ request, locals }) => {
     return new Response('File not found in storage.', { status: 409 });
   }
 
-  const id = await createDocument(user.companyId, user.id, input);
-  if (!id) return new Response('Document type not found.', { status: 404 });
-  return Response.json({ id }, { status: 201 });
+  const created = await createDocument(user.companyId, user.id, input);
+  if (!created) return new Response('Document type not found.', { status: 404 });
+  // Runs in the background. runExtraction saves its own failures on the run.
+  void runExtraction(user.companyId, created.extractionId);
+  return Response.json({ id: created.documentId }, { status: 201 });
 };

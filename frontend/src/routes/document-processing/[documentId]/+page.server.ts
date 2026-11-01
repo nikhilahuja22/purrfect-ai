@@ -1,8 +1,8 @@
-import { SAMPLE_INVOICE_DATA } from '$lib/documents/sample-extraction.js';
-import { requireUser } from '$lib/server/auth/require-user.js';
-import { completeExtraction, getDocumentDetail } from '$lib/server/documents/repository.js';
-import { createDownloadUrl, documentStorageKey } from '$lib/server/storage/s3.js';
 import { fail } from '@sveltejs/kit';
+import { requireUser } from '$lib/server/auth/require-user.js';
+import { getDocumentDetail, resetExtraction } from '$lib/server/documents/repository.js';
+import { runExtraction } from '$lib/server/extraction/run.js';
+import { createDownloadUrl, documentStorageKey } from '$lib/server/storage/s3.js';
 import type { Actions, PageServerLoad } from './$types';
 
 export const load: PageServerLoad = async ({ locals, params }) => {
@@ -15,15 +15,17 @@ export const load: PageServerLoad = async ({ locals, params }) => {
 };
 
 export const actions: Actions = {
-  // Placeholder until the AI backend exists. Fills a pending run with the sample invoice data.
-  loadSample: async ({ request, locals }) => {
+  reprocess: async ({ request, locals }) => {
     const user = requireUser(locals);
     const formData = await request.formData();
-    const updated = await completeExtraction(
-      user.companyId,
-      String(formData.get('extractionId') ?? ''),
-      SAMPLE_INVOICE_DATA
-    );
-    if (!updated) return fail(404, { message: 'Extraction not found.' });
+    const extractionId = String(formData.get('extractionId') ?? '');
+    const reset = await resetExtraction(user.companyId, extractionId);
+    if (!reset) {
+      return fail(409, {
+        message: 'This extraction is already running or was not found. Try again in a few minutes if it is stuck.'
+      });
+    }
+    // Runs in the background. The page refreshes while the run is processing.
+    void runExtraction(user.companyId, extractionId);
   }
 };

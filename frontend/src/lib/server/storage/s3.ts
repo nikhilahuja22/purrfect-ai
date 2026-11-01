@@ -72,3 +72,10 @@ export async function getObjectSize(key: string): Promise<number | null> {
     throw err;
   }
 }
+
+// Downloads the whole file. Server-only, used by the extraction job.
+export async function getObjectBytes(key: string): Promise<Uint8Array> {
+  const res = await s3().send(new GetObjectCommand({ Bucket: bucket(), Key: key }));
+  if (!res.Body) throw new Error(`Stored file ${key} has no content.`);
+  return res.Body.transformToByteArray();
+}

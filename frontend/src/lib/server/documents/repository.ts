@@ -1,4 +1,4 @@
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt, ne, or } from 'drizzle-orm';
 import type { FieldDef } from '$lib/document-parsers/types.js';
 import { getDb } from '$lib/server/db/index.js';
 import {
@@ -136,12 +136,12 @@ export async function getDocumentDetail(
 }
 
 // Stores the file record and its first extraction run (status processing).
-// Returns the new document id, or null if the parser does not belong to the company.
+// Returns the new document and run ids, or null if the parser does not belong to the company.
 export async function createDocument(
   companyId: string,
   submitterId: string,
   input: NewDocumentInput
-): Promise<string | null> {
+): Promise<{ documentId: string; extractionId: string } | null> {
   if (!UUID_PATTERN.test(input.parserId)) return null;
   const db = getDb();
   const [parser] = await db
@@ -152,7 +152,7 @@ export async function createDocument(
   if (!parser) return null;
 
   const id = input.id;
-  await db.transaction(async (tx) => {
+  const extractionId = await db.transaction(async (tx) => {
     await tx.insert(documents).values({
       id,
       companyId,
@@ -162,9 +162,13 @@ export async function createDocument(
       sizeBytes: input.sizeBytes,
       storageKey: documentStorageKey(companyId, id)
     });
-    await tx.insert(documentExtractions).values({ documentId: id, parserId: parser.id });
+    const [run] = await tx
+      .insert(documentExtractions)
+      .values({ documentId: id, parserId: parser.id })
+      .returning({ id: documentExtractions.id });
+    return run.id;
   });
-  return id;
+  return { documentId: id, extractionId };
 }
 
 // Deleting a document also deletes its extraction runs (cascade).
@@ -199,4 +203,96 @@ export async function completeExtraction(
     .set({ status: 'extracted', data, error: null, updatedAt: new Date() })
     .where(eq(documentExtractions.id, extractionId));
   return true;
+}
+
+// Marks a run as failed and stores the reason. Returns false if the run is not in the company.
+export async function failExtraction(
+  companyId: string,
+  extractionId: string,
+  message: string
+): Promise<boolean> {
+  if (!UUID_PATTERN.test(extractionId)) return false;
+  const db = getDb();
+  const [owned] = await db
+    .select({ id: documentExtractions.id })
+    .from(documentExtractions)
+    .innerJoin(documents, eq(documentExtractions.documentId, documents.id))
+    .where(and(eq(documents.companyId, companyId), eq(documentExtractions.id, extractionId)))
+    .limit(1);
+  if (!owned) return false;
+
+  await db
+    .update(documentExtractions)
+    .set({ status: 'failed', error: message, updatedAt: new Date() })
+    .where(eq(documentExtractions.id, extractionId));
+  return true;
+}
+
+// A processing run untouched for this long is treated as stuck (for example, the server stopped mid-run).
+const STALE_AFTER_MS = 10 * 60 * 1000;
+
+// Puts a run back to processing so it can run again. Returns false if the run is not in the company,
+// or is processing and not stale.
+export async function resetExtraction(companyId: string, extractionId: string): Promise<boolean> {
+  if (!UUID_PATTERN.test(extractionId)) return false;
+  const db = getDb();
+  const [owned] = await db
+    .select({ id: documentExtractions.id })
+    .from(documentExtractions)
+    .innerJoin(documents, eq(documentExtractions.documentId, documents.id))
+    .where(and(eq(documents.companyId, companyId), eq(documentExtractions.id, extractionId)))
+    .limit(1);
+  if (!owned) return false;
+
+  const staleBefore = new Date(Date.now() - STALE_AFTER_MS);
+  const updated = await db
+    .update(documentExtractions)
+    .set({ status: 'processing', data: null, error: null, updatedAt: new Date() })
+    .where(
+      and(
+        eq(documentExtractions.id, extractionId),
+        or(
+          ne(documentExtractions.status, 'processing'),
+          lt(documentExtractions.updatedAt, staleBefore)
+        )
+      )
+    )
+    .returning({ id: documentExtractions.id });
+  return updated.length > 0;
+}
+
+// Everything the background job needs for one run. Returns null if the run is not in the company.
+export type ExtractionJob = {
+  extractionId: string;
+  documentId: string;
+  fileName: string;
+  contentType: string;
+  storageKey: string;
+  parserName: string;
+  parserDescription: string;
+  fields: FieldDef[];
+};
+
+export async function getExtractionJob(
+  companyId: string,
+  extractionId: string
+): Promise<ExtractionJob | null> {
+  if (!UUID_PATTERN.test(extractionId)) return null;
+  const [row] = await getDb()
+    .select({
+      extractionId: documentExtractions.id,
+      documentId: documents.id,
+      fileName: documents.fileName,
+      contentType: documents.contentType,
+      storageKey: documents.storageKey,
+      parserName: documentParsers.name,
+      parserDescription: documentParsers.description,
+      fields: documentParsers.config
+    })
+    .from(documentExtractions)
+    .innerJoin(documents, eq(documentExtractions.documentId, documents.id))
+    .innerJoin(documentParsers, eq(documentExtractions.parserId, documentParsers.id))
+    .where(and(eq(documents.companyId, companyId), eq(documentExtractions.id, extractionId)))
+    .limit(1);
+  return row ?? null;
 }

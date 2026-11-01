@@ -139,7 +139,9 @@ function fieldSchema(field: FieldDef): JsonSchema {
 }
 
 // JSON-schema-style description of what the extraction step should return.
-export function toExtractionSchema(parser: DocumentParser): JsonSchema {
+export function toExtractionSchema(
+  parser: Pick<DocumentParser, 'name' | 'description' | 'fields'>
+): JsonSchema {
   const schema = objectSchema(parser.fields);
   return {
     title: parser.name,
